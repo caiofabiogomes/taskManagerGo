@@ -1,4 +1,4 @@
-package main
+package models
 
 import "time"
 
@@ -8,8 +8,8 @@ type Task struct {
 	Description string `json:"description"`
 	Status      int    `json:"status"` // Usando iota para os estados
 	//UserID      uint      `json:"user_id"`
-	DueDate   time.Time `json:"due_date"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	DueDate   time.Time  `json:"due_date"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 	DeletedAt *time.Time `json:"-"`
 }

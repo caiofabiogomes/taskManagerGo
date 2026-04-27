@@ -1,6 +1,7 @@
-package main
+package handlers
 
 import (
+	"example/tasksManager/internal/models"
 	"net/http"
 	"strconv"
 	"time"
@@ -8,16 +9,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var tasks = []Task{}
-
+var tasks = []models.Task{}
 var invalidIdMessage string = "This ID doesn't exists."
 
-func getTasks(c *gin.Context) {
+type TaskHandler struct {
+}
+
+func NewTaskHandler() *TaskHandler {
+	return &TaskHandler{}
+}
+
+func (h *TaskHandler) getTasks(c *gin.Context) {
 	tasksFiltered := getActiveTasks()
 	c.IndentedJSON(http.StatusOK, tasksFiltered)
 }
 
-func getTask(c *gin.Context) {
+func (h *TaskHandler) getTask(c *gin.Context) {
 	var idParam = c.Param("id")
 	u64, err := strconv.ParseUint(idParam, 10, 0)
 	if err != nil {
@@ -37,8 +44,8 @@ func getTask(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, currentTask)
 }
 
-func addTask(c *gin.Context) {
-	var newTask Task
+func (h *TaskHandler) addTask(c *gin.Context) {
+	var newTask models.Task
 	if err := c.BindJSON(&newTask); err != nil {
 		return
 	}
@@ -50,7 +57,7 @@ func addTask(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, newTask)
 }
 
-func deleteTask(c *gin.Context) {
+func (h *TaskHandler) deleteTask(c *gin.Context) {
 	var idParam = c.Param("id")
 	u64, err := strconv.ParseUint(idParam, 10, 0)
 	if err != nil {
@@ -71,24 +78,27 @@ func deleteTask(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, "Deletado com sucesso")
 }
 
-func updateTask(c *gin.Context) {
-	var updatedTask Task
+func (h *TaskHandler) updateTask(c *gin.Context) {
+	var updatedTask models.Task
 	if err := c.BindJSON(&updatedTask); err != nil {
 		return
 	}
 
-	var idUpdatedTask = getIndexId(updatedTask.ID, getActiveTasks())
+	var idUpdatedTask = getIndexId(updatedTask.ID, tasks)
 
-	if idUpdatedTask == -1 {
+	if idUpdatedTask == -1 || tasks[idUpdatedTask].DeletedAt != nil {
 		c.IndentedJSON(http.StatusNotFound, invalidIdMessage)
 		return
 	}
 
 	tasks[idUpdatedTask].Title = updatedTask.Title
 	tasks[idUpdatedTask].Description = updatedTask.Description
-	tasks[idUpdatedTask].DueDate = updatedTask.DueDate
 	tasks[idUpdatedTask].Status = updatedTask.Status
 	tasks[idUpdatedTask].UpdatedAt = time.Now()
+
+	if !updatedTask.DueDate.IsZero() {
+		tasks[idUpdatedTask].DueDate = updatedTask.DueDate
+	}
 
 	c.IndentedJSON(http.StatusOK, tasks[idUpdatedTask])
 }
@@ -101,7 +111,7 @@ func getTaskById() uint {
 	return tasks[len(tasks)-1].ID
 }
 
-func getIndexId(id uint, tasks []Task) int {
+func getIndexId(id uint, tasks []models.Task) int {
 
 	if len(tasks) == 0 {
 		return -1
@@ -111,7 +121,7 @@ func getIndexId(id uint, tasks []Task) int {
 	var max = len(tasks) - 1
 
 	for min <= max {
-		var average = max / 2
+		var average = (min + max) / 2
 
 		if tasks[average].ID == id {
 			return average
@@ -127,8 +137,8 @@ func getIndexId(id uint, tasks []Task) int {
 	return -1
 }
 
-func getActiveTasks() []Task {
-	var activeTasks = []Task{}
+func getActiveTasks() []models.Task {
+	var activeTasks = []models.Task{}
 
 	for i := 0; i < len(tasks); i++ {
 		if tasks[i].DeletedAt == nil {
@@ -138,12 +148,13 @@ func getActiveTasks() []Task {
 	return activeTasks
 }
 
-func main() {
-	router := gin.Default()
-	router.GET("/tasks", getTasks)
-	router.GET("/task/:id", getTask)
-	router.POST("/task", addTask)
-	router.DELETE("/task/:id", deleteTask)
-	router.PUT("/task", updateTask)
-	router.Run("localhost:8080")
+func (h *TaskHandler) Register(router *gin.Engine) {
+	routes := router.Group("/tasks")
+	{
+		routes.GET("", h.getTasks)
+		routes.GET("/:id", h.getTask)
+		routes.POST("", h.addTask)
+		routes.DELETE("/:id", h.deleteTask)
+		routes.PUT("", h.updateTask)
+	}
 }
