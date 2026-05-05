@@ -1,0 +1,15 @@
+services:
+  taskmanager.db:
+    image: postgres:14-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=taskmanagerdb
+    volumes:
+      - taskmanagerdb:/var/lib/postgresql/data/
+    ports:
+      - "5432:5432"
+    restart: on-failure
+
+volumes:
+  taskmanagerdb:

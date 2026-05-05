@@ -1,151 +1,110 @@
 package handlers
 
 import (
-	"example/tasksManager/internal/models"
+	"example/tasksManager/internal/dto"
+	"example/tasksManager/internal/services"
 	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
-var tasks = []models.Task{}
 var invalidIdMessage string = "This ID doesn't exists."
 
 type TaskHandler struct {
+	service services.ITaskService
 }
 
-func NewTaskHandler() *TaskHandler {
-	return &TaskHandler{}
+func NewTaskHandler(service services.ITaskService) *TaskHandler {
+	return &TaskHandler{
+		service: service,
+	}
 }
 
 func (h *TaskHandler) getTasks(c *gin.Context) {
-	tasksFiltered := getActiveTasks()
-	c.IndentedJSON(http.StatusOK, tasksFiltered)
+	ctx := c.Request.Context()
+
+	tasks, error := h.service.GetAll(ctx)
+
+	if error != nil {
+		c.IndentedJSON(http.StatusInternalServerError, error)
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, tasks)
 }
 
 func (h *TaskHandler) getTask(c *gin.Context) {
 	var idParam = c.Param("id")
-	u64, err := strconv.ParseUint(idParam, 10, 0)
+	id, err := uuid.Parse(idParam)
 	if err != nil {
+		// UUID inválido
+		c.JSON(400, gin.H{"error": "invalid UUID"})
+		return
+	}
+	ctx := c.Request.Context()
+	currentTask, err := h.service.FindById(ctx, id)
+
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, err)
 		return
 	}
 
-	id := uint(u64)
-	var currentTaskIndex = getIndexId(id, getActiveTasks())
-
-	if currentTaskIndex == -1 {
-		c.IndentedJSON(http.StatusNotFound, invalidIdMessage)
+	if currentTask == nil {
+		c.IndentedJSON(http.StatusNotFound, "Task wasn't found.")
 		return
 	}
-
-	var currentTask = tasks[currentTaskIndex]
 
 	c.IndentedJSON(http.StatusOK, currentTask)
 }
 
 func (h *TaskHandler) addTask(c *gin.Context) {
-	var newTask models.Task
+	var newTask dto.AddTaskRequest
 	if err := c.BindJSON(&newTask); err != nil {
 		return
 	}
 
-	newTask.ID = getTaskById() + 1
-	newTask.CreatedAt = time.Now()
+	err := h.service.Add(newTask)
 
-	tasks = append(tasks, newTask)
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, err)
+		return
+	}
+
 	c.IndentedJSON(http.StatusOK, newTask)
 }
 
 func (h *TaskHandler) deleteTask(c *gin.Context) {
-	var idParam = c.Param("id")
-	u64, err := strconv.ParseUint(idParam, 10, 0)
+	var id = c.Param("id")
+	err := h.service.Delete(dto.DeleteTaskRequest{ID: id})
+
 	if err != nil {
+		c.IndentedJSON(http.StatusNotFound, err.Error())
 		return
 	}
-
-	id := uint(u64)
-	var currentTaskIndex = getIndexId(id, getActiveTasks())
-
-	if currentTaskIndex == -1 {
-		c.IndentedJSON(http.StatusNotFound, invalidIdMessage)
-		return
-	}
-
-	deletedAt := time.Now()
-	tasks[currentTaskIndex].DeletedAt = &deletedAt
 
 	c.IndentedJSON(http.StatusOK, "Deletado com sucesso")
 }
 
 func (h *TaskHandler) updateTask(c *gin.Context) {
-	var updatedTask models.Task
+	var updatedTask dto.UpdateTaskRequest
 	if err := c.BindJSON(&updatedTask); err != nil {
 		return
 	}
 
-	var idUpdatedTask = getIndexId(updatedTask.ID, tasks)
+	affectedRows, err := h.service.Update(updatedTask)
 
-	if idUpdatedTask == -1 || tasks[idUpdatedTask].DeletedAt != nil {
-		c.IndentedJSON(http.StatusNotFound, invalidIdMessage)
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, err)
 		return
 	}
 
-	tasks[idUpdatedTask].Title = updatedTask.Title
-	tasks[idUpdatedTask].Description = updatedTask.Description
-	tasks[idUpdatedTask].Status = updatedTask.Status
-	tasks[idUpdatedTask].UpdatedAt = time.Now()
-
-	if !updatedTask.DueDate.IsZero() {
-		tasks[idUpdatedTask].DueDate = updatedTask.DueDate
+	if affectedRows == 0 {
+		c.IndentedJSON(http.StatusNotFound, "Task wasn't found")
+		return
 	}
 
-	c.IndentedJSON(http.StatusOK, tasks[idUpdatedTask])
-}
-
-func getTaskById() uint {
-	if len(tasks) == 0 {
-		return 0
-	}
-
-	return tasks[len(tasks)-1].ID
-}
-
-func getIndexId(id uint, tasks []models.Task) int {
-
-	if len(tasks) == 0 {
-		return -1
-	}
-
-	var min = 0
-	var max = len(tasks) - 1
-
-	for min <= max {
-		var average = (min + max) / 2
-
-		if tasks[average].ID == id {
-			return average
-		}
-
-		if id > tasks[average].ID {
-			min = average + 1
-		} else {
-			max = average - 1
-		}
-	}
-
-	return -1
-}
-
-func getActiveTasks() []models.Task {
-	var activeTasks = []models.Task{}
-
-	for i := 0; i < len(tasks); i++ {
-		if tasks[i].DeletedAt == nil {
-			activeTasks = append(activeTasks, tasks[i])
-		}
-	}
-	return activeTasks
+	c.IndentedJSON(http.StatusOK, updatedTask)
 }
 
 func (h *TaskHandler) Register(router *gin.Engine) {
